@@ -138,15 +138,7 @@ func (a *App) startup(ctx context.Context) {
 			return st
 		},
 	})
-	if runtime.GOOS == "darwin" {
-		// macOS 下稍候 200ms 待 Cocoa 主事件循环 [NSApp run] 完全就绪后再挂载状态栏图标，防止主线程死锁
-		go func() {
-			time.Sleep(200 * time.Millisecond)
-			a.trayMgr.Start()
-		}()
-	} else {
-		a.trayMgr.Start()
-	}
+	a.trayMgr.Start()
 }
 
 func (a *App) beforeClose(ctx context.Context) (prevent bool) {

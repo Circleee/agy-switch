@@ -54,28 +54,35 @@ jobs:
         run: |
           ./build/bin/agyc --help
           ./build/bin/agyc list
-          "./build/bin/agy-switch.app/Contents/MacOS/agy-switch" --minimized &
+          "./build/bin/agy-switch.app/Contents/MacOS/agy-switch" --minimized >/tmp/agy-smoke.log 2>&1 &
           APP_PID=$!
           sleep 4
           if ! kill -0 $APP_PID 2>/dev/null; then
-            echo "ERROR: agy-switch.app crashed on macOS startup!"
+            echo "ERROR: agy-switch.app exited/crashed on macOS startup!"
+            cat /tmp/agy-smoke.log || true
+            ls -la ~/Library/Logs/DiagnosticReports/ || true
+            tail -n 60 ~/Library/Logs/DiagnosticReports/*agy-switch* 2>/dev/null || true
             exit 1
           fi
           kill $APP_PID || true
           echo "macOS GUI + Systray smoke test PASSED!"
 
-      - name: Package macOS Universal Bundle
+      - name: Package macOS Universal Bundle (.dmg & .zip)
         run: |
           mkdir -p build/stage-mac
           cp -R "build/bin/agy-switch.app" build/stage-mac/
           cp "build/bin/agyc" build/stage-mac/
           ditto -c -k "build/stage-mac" "build/bin/AGY-Switch-macOS-universal.zip"
+          ln -s /Applications build/stage-mac/Applications
+          hdiutil create -volname "AGY Switch" -srcfolder build/stage-mac -ov -format UDZO "build/bin/AGY-Switch-macOS-universal.dmg"
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AGY-Switch-macOS-universal
-          path: build/bin/AGY-Switch-macOS-universal.zip
+          path: |
+            build/bin/AGY-Switch-macOS-universal.zip
+            build/bin/AGY-Switch-macOS-universal.dmg
 
   # 2. Windows 原生构建与测试
   windows:
@@ -107,7 +114,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AGY-Switch-Windows-amd64
-          path: build/bin/AGY-Switch-Windows-amd64.zip
+          path: |
+            build/bin/agy-switch.exe
+            build/bin/agyc.exe
+            build/bin/AGY-Switch-Windows-amd64.zip
 
   # 3. 推送 v* 标签时自动创建 GitHub Release 并挂载双平台安装包
   release:
@@ -131,11 +141,14 @@ jobs:
             轻量、跨平台、100% 纯官方流量的 Antigravity CLI 多账号切换托盘工具与代理启动器。
 
             #### 下载与安装说明
-            - **Windows (`x64`)**：下载 `AGY-Switch-Windows-amd64.zip`，解压即可使用 `agy-switch.exe`（右下角桌面托盘端）与 `agyc.exe`（命令行启动器）。
-            - **macOS (`Apple Silicon & Intel 通用`)**：下载 `AGY-Switch-macOS-universal.zip`，解压后首次打开若遇系统安全拦截，在终端执行一行：
+            - **Windows (`x64`)**：直接下载 `agy-switch.exe`（桌面托盘端）与 `agyc.exe`（命令行启动器），或下载打包好的 `AGY-Switch-Windows-amd64.zip`。
+            - **macOS (`Apple Silicon & Intel 通用`)**：下载 `AGY-Switch-macOS-universal.dmg`（或 `.zip`），拖入 `/Applications` 后首次打开若遇系统安全拦截，在终端执行一行：
               ```bash
-              xattr -cr agy-switch.app
+              xattr -cr /Applications/agy-switch.app
               ```
           files: |
+            dist-assets/agy-switch.exe
+            dist-assets/agyc.exe
             dist-assets/AGY-Switch-Windows-amd64.zip
+            dist-assets/AGY-Switch-macOS-universal.dmg
             dist-assets/AGY-Switch-macOS-universal.zip
