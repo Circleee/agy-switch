@@ -1,0 +1,107 @@
+name: Multi-Platform Build & macOS Smoke Test
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # 1. 真机 macOS (Apple Silicon + Intel Universal) 编译、单元测试与 GUI 启动冒烟验证
+  macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+
+      - name: Generate App Icon & Run Unit Tests on Real macOS
+        run: |
+          go run ./cmd/genicon
+          go test -v ./internal/...
+
+      - name: Build Universal macOS App (arm64 + amd64) & agyc CLI
+        run: |
+          wails build -platform darwin/universal -clean
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o build/bin/agyc-arm64 ./cmd/agyc
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o build/bin/agyc-amd64 ./cmd/agyc
+          lipo -create -output build/bin/agyc build/bin/agyc-arm64 build/bin/agyc-amd64
+          rm build/bin/agyc-arm64 build/bin/agyc-amd64
+
+      - name: Ad-hoc CodeSign (防止 Apple Silicon 提示“应用已损坏”)
+        run: |
+          codesign --force --deep --sign - "build/bin/agy-switch.app"
+          codesign --force --sign - "build/bin/agyc"
+
+      - name: Real macOS Runtime Smoke Test (验证 Cocoa 状态栏与 CLI 无崩溃死锁)
+        run: |
+          ./build/bin/agyc --help
+          ./build/bin/agyc list
+          # 后台静默启动 .app 4 秒，验证 AppKit / Systray 线程不发生崩溃或死锁
+          "./build/bin/agy-switch.app/Contents/MacOS/agy-switch" --minimized &
+          APP_PID=$!
+          sleep 4
+          if ! kill -0 $APP_PID 2>/dev/null; then
+            echo "ERROR: agy-switch.app crashed on macOS startup!"
+            exit 1
+          fi
+          kill $APP_PID || true
+          echo "macOS GUI + Systray smoke test PASSED!"
+
+      - name: Package macOS Universal Bundle
+        run: |
+          cd build/bin
+          ditto -c -k --keepParent "agy-switch.app" "AGY-Switch-macOS-universal.zip"
+          zip "AGY-Switch-macOS-universal.zip" agyc
+
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AGY-Switch-macOS-universal
+          path: build/bin/AGY-Switch-macOS-universal.zip
+
+  # 2. Windows 原生构建与测试
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+
+      - name: Build & Test on Windows
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AGY-Switch-Windows-amd64
+          path: |
+            build/bin/agy-switch.exe
+            build/bin/agyc.exe

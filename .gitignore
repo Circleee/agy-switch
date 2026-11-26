@@ -1,0 +1,25 @@
+# Binaries & build outputs
+build/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.zip
+*.app
+
+# Frontend dependencies & build artifacts
+frontend/node_modules/
+frontend/dist/*
+!frontend/dist/.gitkeep
+frontend/wailsjs/
+
+# Go test / coverage
+*.test
+*.out
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.bak*

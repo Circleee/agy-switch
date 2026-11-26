@@ -1,0 +1,18 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "agy-switch",
+  "outputfilename": "agy-switch",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "agy-switch"
+  },
+  "info": {
+    "companyName": "agy-switch",
+    "productName": "AGY Switch",
+    "productVersion": "1.0.0",
+    "comments": "Safe cross-platform account switcher and launcher for Antigravity CLI"
+  }
+}
