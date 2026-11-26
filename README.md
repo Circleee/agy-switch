@@ -39,14 +39,18 @@
 
 ## 下载与安装
 
-### 1. 直接获取构建包
-前往仓库 [**GitHub Actions**](https://github.com/Circleee/agy-switch/actions) 最新构建记录的 **Artifacts**（或 Releases）下载对应系统压缩包：
-- **Windows (`x64`)**：`AGY-Switch-Windows-amd64`（内含 `agy-switch.exe` 与 `agyc.exe`）
-- **macOS (`Universal` 支持 Apple Silicon & Intel)**：`AGY-Switch-macOS-universal.zip`（内含 `agy-switch.app` 与 `agyc`）
-  > macOS 首次解压打开若提示系统隔离拦截，在终端执行一行即可放行：
-  > ```bash
-  > xattr -cr agy-switch.app
-  > ```
+### 1. 直接下载可执行文件与安装包
+前往 [**Releases 最新版本**](https://github.com/Circleee/agy-switch/releases/latest) 直接下载：
+
+| 平台 | 推荐下载 | 说明 |
+| :--- | :--- | :--- |
+| **Windows (`x64`)** | [**agy-switch.exe**](https://github.com/Circleee/agy-switch/releases/latest/download/agy-switch.exe) · [**agyc.exe**](https://github.com/Circleee/agy-switch/releases/latest/download/agyc.exe) · [整合压缩包 (.zip)](https://github.com/Circleee/agy-switch/releases/latest/download/AGY-Switch-Windows-amd64.zip) | 双击 `agy-switch.exe` 即可常驻右下角托盘 |
+| **macOS (`Apple Silicon & Intel`)** | [**AGY-Switch-macOS-universal.dmg**](https://github.com/Circleee/agy-switch/releases/latest/download/AGY-Switch-macOS-universal.dmg) · [压缩包 (.zip)](https://github.com/Circleee/agy-switch/releases/latest/download/AGY-Switch-macOS-universal.zip) | 拖入 `/Applications` 使用 |
+
+> macOS 首次打开若提示系统安全拦截（未公证），在终端执行一行即可放行：
+> ```bash
+> xattr -cr /Applications/agy-switch.app
+> ```
 
 ### 2. 注册命令行 `agyc` 到系统 PATH（Windows 一键脚本）
 ```powershell
