@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -28,8 +29,9 @@ type DashboardData struct {
 	RunningAgyCount int                `json:"running_agy_count"`
 	AutoStart       bool               `json:"auto_start"`
 	AtoolAvailable  bool               `json:"atool_available"`
-	LoginRunning    bool               `json:"login_running"`
-	QuotaRefreshing bool               `json:"quota_refreshing"`
+	LoginRunning       bool               `json:"login_running"`
+	QuotaRefreshing    bool               `json:"quota_refreshing"`
+	QuotaRefreshTarget string             `json:"quota_refresh_target"`
 }
 
 // SwitchResult 返回账号切换结果（含并发运行确认拦截信息）
@@ -49,6 +51,8 @@ type App struct {
 	authRunner      *agy.AuthFlowRunner
 	trayMgr         *tray.Manager
 	ipcSrv          *ipc.Server
+	refreshMu       sync.Mutex
+	refreshTarget   string
 	quotaRefreshing atomic.Bool
 	quitting        atomic.Bool
 }
@@ -230,16 +234,21 @@ func (a *App) GetDashboard() (*DashboardData, error) {
 		}
 	}
 
+	a.refreshMu.Lock()
+	rTarget := a.refreshTarget
+	a.refreshMu.Unlock()
+
 	return &DashboardData{
-		Platform:        runtime.GOOS,
-		State:           st,
-		Health:          a.syncer.CheckHealth(),
-		AgyBinaryPath:   agyPath,
-		RunningAgyCount: agy.CountRunningAgyProcesses(),
-		AutoStart:       agy.GetAutoStart(),
-		AtoolAvailable:  atoolAvailable,
-		LoginRunning:    a.authRunner.IsRunning(),
-		QuotaRefreshing: a.quotaRefreshing.Load(),
+		Platform:           runtime.GOOS,
+		State:              st,
+		Health:             a.syncer.CheckHealth(),
+		AgyBinaryPath:      agyPath,
+		RunningAgyCount:    agy.CountRunningAgyProcesses(),
+		AutoStart:          agy.GetAutoStart(),
+		AtoolAvailable:     atoolAvailable,
+		LoginRunning:       a.authRunner.IsRunning(),
+		QuotaRefreshing:    a.quotaRefreshing.Load(),
+		QuotaRefreshTarget: rTarget,
 	}, nil
 }
 
@@ -353,7 +362,18 @@ func (a *App) RefreshAccountQuota(accountID string) (*store.AccountQuota, error)
 	if !a.quotaRefreshing.CompareAndSwap(false, true) {
 		return nil, errors.New("正在刷新配额中，请稍候")
 	}
+	targetTag := "current"
+	if accountID != "" {
+		targetTag = accountID
+	}
+	a.refreshMu.Lock()
+	a.refreshTarget = targetTag
+	a.refreshMu.Unlock()
+
 	defer func() {
+		a.refreshMu.Lock()
+		a.refreshTarget = ""
+		a.refreshMu.Unlock()
 		a.quotaRefreshing.Store(false)
 		a.notifyChanged()
 	}()
@@ -397,10 +417,16 @@ func (a *App) RefreshAllQuotas() error {
 	if !a.quotaRefreshing.CompareAndSwap(false, true) {
 		return errors.New("正在执行配额刷新任务，请稍候")
 	}
+	a.refreshMu.Lock()
+	a.refreshTarget = "all"
+	a.refreshMu.Unlock()
 	a.notifyChanged()
 
 	go func() {
 		defer func() {
+			a.refreshMu.Lock()
+			a.refreshTarget = ""
+			a.refreshMu.Unlock()
 			a.quotaRefreshing.Store(false)
 			a.notifyChanged()
 		}()

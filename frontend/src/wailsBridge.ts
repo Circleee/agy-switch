@@ -73,6 +73,7 @@ export interface DashboardData {
   atool_available: boolean;
   login_running: boolean;
   quota_refreshing: boolean;
+  quota_refresh_target: string;
 }
 
 export interface SwitchResult {

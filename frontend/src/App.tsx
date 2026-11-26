@@ -79,6 +79,7 @@ export default function App() {
   const [toast, setToast] = useState<{ kind: string; message: string } | null>(null);
   const [loginStatus, setLoginStatus] = useState<LoginFlowStatus | null>(null);
   const [quotaProg, setQuotaProg] = useState<QuotaProgress | null>(null);
+  const [localRefreshTarget, setLocalRefreshTarget] = useState<string>('');
   const [proxyTest, setProxyTest] = useState<ProxyCheckResult | null>(null);
   const [testingProxy, setTestingProxy] = useState(false);
   const [editingAliasId, setEditingAliasId] = useState<string | null>(null);
@@ -116,6 +117,9 @@ export default function App() {
       backend.getDashboard().then((d) => {
         setData(d);
         setCfgDraft({ ...d.state.config, auto_start: d.auto_start });
+        if (!d.quota_refreshing) {
+          setLocalRefreshTarget('');
+        }
       }).catch(() => {});
     });
     const offToast = onBackendEvent('app:toast', (p: any) => {
@@ -129,7 +133,12 @@ export default function App() {
       reload();
     });
     const offQuota = onBackendEvent('quota:progress', (p: QuotaProgress) => {
-      setQuotaProg(p.stage === 'done' ? null : p);
+      if (p.stage === 'done') {
+        setQuotaProg(null);
+        setLocalRefreshTarget('');
+      } else {
+        setQuotaProg(p);
+      }
     });
     const offConfirm = onBackendEvent('switch:confirm_needed', (p: any) => {
       if (p?.account_id) {
@@ -189,7 +198,32 @@ export default function App() {
   const accounts = data?.state.accounts ?? [];
   const currentId = data?.state.current_account_id ?? '';
   const cfg = data?.state.config;
-  const refreshing = Boolean(data?.quota_refreshing || quotaProg);
+  const activeRefreshTarget =
+    localRefreshTarget || data?.quota_refresh_target || (quotaProg ? 'all' : '');
+  const refreshing = Boolean(activeRefreshTarget || data?.quota_refreshing);
+
+  const runSingleRefresh = async (accId: string) => {
+    const tag = accId || 'current';
+    setLocalRefreshTarget(tag);
+    try {
+      await backend.refreshAccountQuota(accId);
+      await reload();
+    } catch (e: any) {
+      showToast('error', e?.message || String(e));
+    } finally {
+      setLocalRefreshTarget('');
+    }
+  };
+
+  const runAllRefresh = async () => {
+    setLocalRefreshTarget('all');
+    try {
+      await backend.refreshAllQuotas();
+    } catch (e: any) {
+      setLocalRefreshTarget('');
+      showToast('error', e?.message || String(e));
+    }
+  };
 
   return (
     <div className="shell">
@@ -315,22 +349,17 @@ export default function App() {
               <button
                 className="btn btn-sm"
                 disabled={refreshing || accounts.length === 0}
-                onClick={() =>
-                  backend
-                    .refreshAccountQuota('')
-                    .then(() => reload())
-                    .catch((e) => showToast('error', e?.message || String(e)))
-                }
+                onClick={() => runSingleRefresh('')}
               >
-                <IconRefresh spin={refreshing} />
+                <IconRefresh spin={activeRefreshTarget === 'current'} />
                 <span>刷当前</span>
               </button>
               <button
                 className="btn btn-sm"
                 disabled={refreshing || accounts.length === 0}
-                onClick={() => backend.refreshAllQuotas().catch((e) => showToast('error', e?.message || String(e)))}
+                onClick={runAllRefresh}
               >
-                <IconRefresh spin={refreshing} />
+                <IconRefresh spin={activeRefreshTarget === 'all'} />
                 <span>刷全部</span>
               </button>
             </div>
@@ -415,14 +444,9 @@ export default function App() {
                             className="btn btn-xs btn-icon"
                             title="刷新此号余量"
                             disabled={refreshing}
-                            onClick={() =>
-                              backend
-                                .refreshAccountQuota(acc.id)
-                                .then(() => reload())
-                                .catch((e) => showToast('error', e?.message || String(e)))
-                            }
+                            onClick={() => runSingleRefresh(acc.id)}
                           >
-                            <IconRefresh />
+                            <IconRefresh spin={activeRefreshTarget === acc.id} />
                           </button>
                           {confirmDeleteId === acc.id ? (
                             <button
