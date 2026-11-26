@@ -1,4 +1,4 @@
-name: Multi-Platform Build & macOS Smoke Test
+name: Multi-Platform Build & Release
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   # 1. 真机 macOS (Apple Silicon + Intel Universal) 编译、单元测试与 GUI 启动冒烟验证
@@ -18,7 +21,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.x'
+          go-version: '>=1.24.0'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -28,7 +31,7 @@ jobs:
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
 
-      - name: Generate App Icon & Run Unit Tests on Real macOS
+      - name: Run Unit Tests on Real macOS
         run: |
           go run ./cmd/genicon
           go test -v ./internal/...
@@ -40,17 +43,17 @@ jobs:
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o build/bin/agyc-amd64 ./cmd/agyc
           lipo -create -output build/bin/agyc build/bin/agyc-arm64 build/bin/agyc-amd64
           rm build/bin/agyc-arm64 build/bin/agyc-amd64
+          chmod +x build/bin/agyc
 
-      - name: Ad-hoc CodeSign (防止 Apple Silicon 提示“应用已损坏”)
+      - name: Ad-hoc CodeSign
         run: |
           codesign --force --deep --sign - "build/bin/agy-switch.app"
           codesign --force --sign - "build/bin/agyc"
 
-      - name: Real macOS Runtime Smoke Test (验证 Cocoa 状态栏与 CLI 无崩溃死锁)
+      - name: Real macOS Runtime Smoke Test
         run: |
           ./build/bin/agyc --help
           ./build/bin/agyc list
-          # 后台静默启动 .app 4 秒，验证 AppKit / Systray 线程不发生崩溃或死锁
           "./build/bin/agy-switch.app/Contents/MacOS/agy-switch" --minimized &
           APP_PID=$!
           sleep 4
@@ -63,9 +66,10 @@ jobs:
 
       - name: Package macOS Universal Bundle
         run: |
-          cd build/bin
-          ditto -c -k --keepParent "agy-switch.app" "AGY-Switch-macOS-universal.zip"
-          zip "AGY-Switch-macOS-universal.zip" agyc
+          mkdir -p build/stage-mac
+          cp -R "build/bin/agy-switch.app" build/stage-mac/
+          cp "build/bin/agyc" build/stage-mac/
+          ditto -c -k "build/stage-mac" "build/bin/AGY-Switch-macOS-universal.zip"
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
@@ -83,7 +87,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.x'
+          go-version: '>=1.24.0'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -96,12 +100,42 @@ jobs:
       - name: Build & Test on Windows
         shell: pwsh
         run: |
-          powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
+          powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1 -NoRelaunch
+          Compress-Archive -Path build\bin\agy-switch.exe, build\bin\agyc.exe -DestinationPath build\bin\AGY-Switch-Windows-amd64.zip -Force
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AGY-Switch-Windows-amd64
-          path: |
-            build/bin/agy-switch.exe
-            build/bin/agyc.exe
+          path: build/bin/AGY-Switch-Windows-amd64.zip
+
+  # 3. 推送 v* 标签时自动创建 GitHub Release 并挂载双平台安装包
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-assets
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "AGY Switch ${{ github.ref_name }}"
+          generate_release_notes: true
+          body: |
+            ### AGY Switch ${{ github.ref_name }}
+            轻量、跨平台、100% 纯官方流量的 Antigravity CLI 多账号切换托盘工具与代理启动器。
+
+            #### 下载与安装说明
+            - **Windows (`x64`)**：下载 `AGY-Switch-Windows-amd64.zip`，解压即可使用 `agy-switch.exe`（右下角桌面托盘端）与 `agyc.exe`（命令行启动器）。
+            - **macOS (`Apple Silicon & Intel 通用`)**：下载 `AGY-Switch-macOS-universal.zip`，解压后首次打开若遇系统安全拦截，在终端执行一行：
+              ```bash
+              xattr -cr agy-switch.app
+              ```
+          files: |
+            dist-assets/AGY-Switch-Windows-amd64.zip
+            dist-assets/AGY-Switch-macOS-universal.zip
